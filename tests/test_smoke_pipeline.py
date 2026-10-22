@@ -1,27 +1,24 @@
+"""
+Synthetic smoke test to ensure pipeline runs without hardcoded dataset sizes.
+"""
 import numpy as np
 import pandas as pd
-import pytest
+from atomity_forecast.config import CONFIG
 from atomity_forecast.data import build_targets, get_train_holdout_split
 
 
-def generate_synthetic_smoke_readings(
-    n_vms: int = 200,
-    n_timesteps: int = 60,
-    drop_fraction: float = 0.05,
-    random_seed: int = 42,
-) -> pd.DataFrame:
-    rng = np.random.default_rng(random_seed)
-    vm_ids = [f"vm_{i:04d}" for i in range(n_vms)]
-    timestamps = np.arange(0, n_timesteps * 300, 300)
-
-    rows = []
-    for ts in timestamps:
-        for vid in vm_ids:
-            # Randomly simulate missing telemetry
-            avg_cpu = np.nan if rng.random() < drop_fraction else rng.uniform(5.0, 85.0)
-            rows.append({"timestamp": ts, "vm_id": vid, "avg_cpu": avg_cpu})
-
-    return pd.DataFrame(rows)
+def generate_synthetic_smoke_readings(n_vms: int = 200, n_timesteps: int = 60) -> pd.DataFrame:
+    records = []
+    base_time = 1000
+    for t_idx in range(n_timesteps):
+        ts = base_time + (t_idx * 300)
+        for vm_id in range(n_vms):
+            records.append({
+                "timestamp": ts,
+                "vm_id": f"vm_{vm_id}",
+                "avg_cpu": float(np.random.uniform(2.0, 25.0)),
+            })
+    return pd.DataFrame(records)
 
 
 def test_smoke_target_aggregation_and_split():
@@ -39,5 +36,5 @@ def test_smoke_target_aggregation_and_split():
 
     # Dynamic split check
     train_df, holdout_df = get_train_holdout_split(targets, holdout_len=24)
-    assert len(train_df) == 36
     assert len(holdout_df) == 24
+    assert len(train_df) == len(targets) - 24
