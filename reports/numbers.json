@@ -12,5 +12,17 @@
   "white_noise_band_ci95": 0.18687866749213608,
   "cv_winning_model": "Ensemble",
   "cv_best_mae": 0.18486507965776025,
-  "cv_best_peak_mae": 0.165844033714755
+  "cv_best_peak_mae": 0.165844033714755,
+  "holdout_steps": 24,
+  "cpu_MAE": 0.10459858093734509,
+  "cpu_RMSE": 0.12890243846979849,
+  "cpu_WAPE": 1.1284790092489478,
+  "cpu_Peak_MAE": 0.10231899848739179,
+  "vm_count_MAE": 0.0,
+  "residual_std": 0.1580327012841452,
+  "interval_95_half_width": 0.3097440945169246,
+  "target_util_threshold": 80.0,
+  "capacity_headroom_multiplier": 0.1211,
+  "holdout_sla_violations": 0,
+  "holdout_coverage_percentage": 100.0
 }
