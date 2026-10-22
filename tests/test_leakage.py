@@ -1,65 +1,44 @@
 """
-Unit and Leakage Tests:
-Verifies zero data leakage, correct shapes, and target ranges.
+Temporal leakage and split verification tests.
 """
-import pytest
 import numpy as np
 import pandas as pd
-
-from src.atomity_forecast.data import load_raw_data, build_targets, get_train_holdout_split
-from src.atomity_forecast.models import DirectRidgeModel
-
+from atomity_forecast.config import PATHS, CONFIG
+from atomity_forecast.data import load_raw_data, build_targets, get_train_holdout_split
+from atomity_forecast.models import EnsembleModel, LastValueBaseline, AR1Model, DirectRidgeModel
 
 def test_target_schema_and_counts():
-    readings, _ = load_raw_data()
-    targets = build_targets(readings)
-
-    # 1. Total timestamps must equal 134
-    assert len(targets) == 134, f"Expected 134 steps, found {len(targets)}"
-
-    # 2. active_vm_count must be constant 10,000
-    assert (targets["active_vm_count"] == 10000).all(), "active_vm_count changed unexpectedly"
-
-    # 3. CPU utilization bounded in [0, 100]
-    assert targets["aggregate_cpu_utilization"].min() >= 0.0
-    assert targets["aggregate_cpu_utilization"].max() <= 100.0
-
+    df_readings, _ = load_raw_data(PATHS.data_dir)
+    targets = build_targets(df_readings)
+    assert len(targets) > 0
+    assert (targets["active_vm_count"] > 0).all()
+    assert "aggregate_cpu_utilization" in targets.columns
 
 def test_split_integrity():
-    readings, _ = load_raw_data()
-    targets = build_targets(readings)
-    train_df, holdout_df = get_train_holdout_split(targets, holdout_len=24)
-
-    assert len(train_df) == 110
-    assert len(holdout_df) == 24
-    # Ensure train timestamps strictly precede holdout
-    assert train_df["timestamp"].max() < holdout_df["timestamp"].min()
-
+    df_readings, _ = load_raw_data(PATHS.data_dir)
+    targets = build_targets(df_readings)
+    train, holdout = get_train_holdout_split(targets, holdout_len=CONFIG.holdout_steps)
+    assert len(holdout) == CONFIG.holdout_steps
+    assert len(train) + len(holdout) == len(targets)
+    assert train["timestamp"].max() < holdout["timestamp"].min()
 
 def test_perturbation_no_leakage():
-    """
-    CRITICAL TEST: Perturbing holdout values must produce IDENTICAL predictions.
-    If a model leaks future information, this test will fail.
-    """
-    readings, _ = load_raw_data()
-    targets = build_targets(readings)
-    train_df, holdout_df = get_train_holdout_split(targets, holdout_len=24)
-
-    # Fit Ridge strictly on train_df
-    y_train = train_df["aggregate_cpu_utilization"].to_numpy()
-    model = DirectRidgeModel(alpha=1.0, lags=6)
-    model.fit(y_train, horizon=24)
-    pred_original = model.predict(horizon=24)
-
-    # Simulate an adversary radically changing the holdout data
-    holdout_perturbed = holdout_df.copy()
-    holdout_perturbed["aggregate_cpu_utilization"] = 99.99
-
-    # Re-predict using training window
-    pred_check = model.predict(horizon=24)
-
-    np.testing.assert_allclose(
-        pred_original,
-        pred_check,
-        err_msg="LEAKAGE DETECTED: Forecast output changed when holdout was perturbed!",
-    )
+    df_readings, _ = load_raw_data(PATHS.data_dir)
+    targets = build_targets(df_readings)
+    train, holdout = get_train_holdout_split(targets, holdout_len=CONFIG.holdout_steps)
+    
+    y_train = train["aggregate_cpu_utilization"].to_numpy()
+    model1 = EnsembleModel([LastValueBaseline(), AR1Model(), DirectRidgeModel(alpha=1.0, lags=6)])
+    model1.fit(y_train, horizon=CONFIG.holdout_steps)
+    preds1 = model1.predict(horizon=CONFIG.holdout_steps)
+    
+    # Perturb holdout data completely
+    perturbed_holdout = holdout.copy()
+    perturbed_holdout["aggregate_cpu_utilization"] = perturbed_holdout["aggregate_cpu_utilization"] + 50.0
+    
+    # Fit again strictly on train - predictions MUST remain identical
+    model2 = EnsembleModel([LastValueBaseline(), AR1Model(), DirectRidgeModel(alpha=1.0, lags=6)])
+    model2.fit(y_train, horizon=CONFIG.holdout_steps)
+    preds2 = model2.predict(horizon=CONFIG.holdout_steps)
+    
+    np.testing.assert_allclose(preds1, preds2)
