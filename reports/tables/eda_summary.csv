@@ -1,0 +1,2 @@
+n_training_steps,active_vm_count_constant,active_vm_count_last,cpu_mean,cpu_std,cpu_min,cpu_max,cpu_median,lag1_autocorr,lag24_autocorr,white_noise_band_ci95
+110,True,10000,9.414089019539007,0.19356833547362817,9.111633601754887,9.912175173984913,9.378120946203444,0.6620683329704645,-0.019924543593769918,0.18687866749213608

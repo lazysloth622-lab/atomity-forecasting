@@ -1,0 +1,5 @@
+venv/
+challenge_data/
+*.pyc
+__pycache__/
+.ipynb_checkpoints/

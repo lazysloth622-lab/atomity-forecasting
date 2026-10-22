@@ -1,0 +1,16 @@
+{
+  "n_training_steps": 110,
+  "active_vm_count_constant": true,
+  "active_vm_count_last": 10000,
+  "cpu_mean": 9.414089019539007,
+  "cpu_std": 0.19356833547362817,
+  "cpu_min": 9.111633601754887,
+  "cpu_max": 9.912175173984913,
+  "cpu_median": 9.378120946203444,
+  "lag1_autocorr": 0.6620683329704645,
+  "lag24_autocorr": -0.019924543593769918,
+  "white_noise_band_ci95": 0.18687866749213608,
+  "cv_winning_model": "Ensemble",
+  "cv_best_mae": 0.18486507965776025,
+  "cv_best_peak_mae": 0.165844033714755
+}

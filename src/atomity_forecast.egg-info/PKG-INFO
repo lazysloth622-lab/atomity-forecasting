@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: atomity-forecast
+Version: 0.1.0
+Summary: Cloud workload forecasting on Azure Public Dataset V2
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.26.0
+Requires-Dist: pandas>=2.2.0
+Requires-Dist: scipy>=1.12.0
+Requires-Dist: scikit-learn>=1.4.0
+Requires-Dist: lightgbm>=4.3.0
+Requires-Dist: statsmodels>=0.14.0
+Requires-Dist: matplotlib>=3.8.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
