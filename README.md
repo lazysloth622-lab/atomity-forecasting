@@ -7,7 +7,17 @@ Production-grade time-series forecasting pipeline developed for the Atomity ML E
 
 
 \---
+## Quick Start & Reproduction
 
+### Environment Setup
+```bash
+python -m venv venv
+# Windows:
+venv\Scripts\activate
+# Linux/macOS:
+source venv/bin/activate
+
+pip install -e .
 
 
 \## 1. Project Overview \& Target Formulation
