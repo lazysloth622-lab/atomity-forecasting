@@ -1,100 +1,123 @@
-\# Cloud Workload Forecasting Pipeline (Azure Public Dataset V2)
+# Cloud Workload Forecasting Pipeline (Azure Public Dataset V2)
 
+End-to-end time-series forecasting pipeline for the Atomity ML take-home:
+aggregate compute demand across 10,000 VMs, forecasting a 2-hour horizon
+(24 steps at 5-minute cadence) for two targets:
 
+1. `active_vm_count(t)` — distinct VMs with a valid CPU reading at timestamp `t`.
+2. `aggregate_cpu_utilization(t)` — mean of VM-level `avg_cpu` at `t`, in `[0, 100]`.
 
-Production-grade time-series forecasting pipeline developed for the Atomity ML Engineering take-home assessment. Evaluates aggregate compute demand across 10,000 virtual machines over a 2-hour lookahead horizon (24 steps at 5-minute intervals).
+## 1. Environment setup
 
+Python 3.11+ required.
 
-
-\---
-## Quick Start & Reproduction
-
-### Environment Setup
 ```bash
-python -m venv venv
-# Windows:
-venv\Scripts\activate
+python -m venv .venv
 # Linux/macOS:
-source venv/bin/activate
+source .venv/bin/activate
+# Windows:
+# .venv\Scripts\Activate.ps1
 
-pip install -e .
+python -m pip install --upgrade pip
+pip install -e ".[dev]"          # core + pytest (preferred)
+# alternative fully pinned install: pip install -r requirements.txt
+```
 
+Verify:
 
-\## 1. Project Overview \& Target Formulation
+```bash
+pytest -q
+```
 
-The pipeline predicts two concurrent targets over a 24-step holdout horizon:
+## 2. Dataset placement
 
-1\. `active\_vm\_count(t)`: The count of distinct VMs reporting valid CPU telemetry at timestep t.
-
-2\. `aggregate\_cpu\_utilization(t)`: The arithmetic mean of `avg\_cpu` across all active VMs at timestep t, strictly bounded in \[0, 100].
-
-
-
-\### Architecture \& Hygiene Highlights
-
-\- \*\*Strict Temporal Boundary:\*\* Zero data leakage. The first 110 timesteps serve as the development/training window; the final 24 timesteps represent the strictly unseen holdout horizon.
-
-\- \*\*Dynamic Inference (Smoke-Test Compliant):\*\* No hard-coded VM counts, time-series lengths, or dataset indices. Evaluated and verified against synthetic datasets with varying VM counts.
-
-\- \*\*Model Freezing Checkpoint:\*\* Architecture selection was pre-registered in `reports/selection\_rule.md` and committed under git tag `model-frozen` prior to running single-pass holdout scoring.
-
-\- \*\*Zero Number Hallucination:\*\* Every statistic, table, and markdown metric is generated directly via code into `reports/numbers.json` and `reports/tables/`.
-
-
-
-\---
-
-
-
-\## 2. Directory Layout
+Download the fixed `data-v1` release (`data-v1.tar.gz`) from the challenge
+repository's GitHub Releases and extract it so the layout is:
 
 ```text
+challenge_data/
+├── vm_cpu_readings.csv.gz
+├── vm_metadata.csv.gz
+├── DATA_CARD.md
+└── SHA256SUMS
+```
 
-atomity-forecasting/
+Optional integrity check: `cd challenge_data && sha256sum -c SHA256SUMS`.
+The data directory is git-ignored and is never committed.
 
-├── challenge\_data/              # Raw telemetry files (compressed)
+## 3. Reproduce the submission artifact
 
-├── reports/
+One command regenerates `predictions.csv` (24 rows, schema per `SUBMISSION.md`):
 
-│   ├── figures/                 # EDA and holdout forecast plots
+```bash
+python -m atomity_forecast.cli predict --data challenge_data --output predictions.csv
+# equivalent: python -m atomity_forecast.predict
+```
 
-│   ├── tables/                  # CV metrics and holdout evaluation summaries
+The CLI flags make the pipeline work with a reviewer-supplied smoke dataset;
+nothing is hard-coded to 10,000 VMs or 134 timesteps.
 
-│   ├── numbers.json             # Source-of-truth JSON numbers for reporting
+## 4. Full pipeline (figures, tables, report)
 
-│   ├── selection\_rule.md        # Pre-registered model selection protocol
+Run in order from the repository root:
 
-│   └── final\_report.md          # Programmatically rendered technical report
+```bash
+python -m atomity_forecast.eda            # EDA stats + autocorrelation figures
+python -m atomity_forecast.segments       # churn verification + VM segment analysis
+python -m atomity_forecast.validate       # 6-fold rolling-origin model benchmark
+python evaluate_holdout.py                # single-pass frozen holdout scoring
+python -m atomity_forecast.policy         # uncertainty band + capacity policy
+python -m atomity_forecast.generate_figures
+python -m atomity_forecast.generate_report
+```
 
-├── src/atomity\_forecast/        # Core package source
+Outputs:
 
-│   ├── config.py                # Centralized paths and hyperparameters
+- `predictions.csv` — required submission artifact.
+- `reports/numbers.json` — single source of truth for every reported statistic.
+- `reports/tables/` — CV fold/summary, holdout metrics, per-step errors, segments, EDA.
+- `reports/figures/` — EDA, validation and holdout plots.
+- `reports/final_report.md` — rendered technical report (all numbers injected from code).
+- `reports/selection_rule.md` — pre-registered model selection protocol.
 
-│   ├── data.py                  # Ingestion, validation, and temporal splitting
+## 5. Modeling decisions (summary)
 
-│   ├── eda.py                   # Development-window EDA runner
+- **Leakage-safe by construction:** the final 24 timestamps are never used in
+  fitting, feature engineering, scaling, tuning or selection; a perturbation
+  test proves holdout values cannot change predictions.
+- **Validation:** chronological 110/24 outer split plus 6 expanding-window
+  rolling-origin folds (horizon 24, origins from t=50) inside the development
+  window. No random shuffling.
+- **Model ladder:** TrainMean / LastValue baselines, AR(1), damped Holt,
+  direct multi-step Ridge and LightGBM; frozen winner is an ensemble of
+  LastValue + AR(1) + direct Ridge, selected solely on CV MAE (Peak MAE tie-break).
+- **`active_vm_count`:** the curated fleet is static, so last-value persistence
+  is exact (holdout MAE 0.0 VMs) and stays valid on non-constant smoke datasets.
+- **Uncertainty/policy:** empirical residual sigma gives a 95% band and an
+  80%-target-utilization capacity rule; assumptions and limitations are stated
+  in `reports/final_report.md` sections 8–9.
 
-│   ├── metrics.py               # MAE, RMSE, WAPE, and Peak-Quartile MAE
+## 6. Project layout
 
-│   ├── models.py                # Model ladder (Baselines, AR1, ETS, ML, Ensemble)
-
-│   ├── split.py                 # Rolling-origin cross-validation engine
-
-│   ├── validate.py              # 6-fold benchmark runner
-
-│   ├── predict.py               # Holdout predictions generator
-
-│   ├── policy.py                # Uncertainty quantification and headroom policy
-
-│   └── generate\_report.py       # Report template generator
-
-├── tests/                       # Complete pytest suite (leakage, smoke, bounds)
-
-├── evaluate\_holdout.py          # Single-pass frozen holdout scoring script
-
-├── predictions.csv              # Required final submission artifact (24 rows)
-
-├── pyproject.toml               # PEP 621 package build configuration
-
-└── requirements.txt             # Pinned environment dependencies
-
+```text
+├── src/atomity_forecast/
+│   ├── cli.py               # argparse entry point (atomity-predict)
+│   ├── config.py            # paths and hyperparameters
+│   ├── data.py              # ingestion, target aggregation, temporal split
+│   ├── eda.py               # development-window EDA
+│   ├── segments.py          # metadata churn check and segment analysis
+│   ├── metrics.py           # MAE, RMSE, WAPE, peak-quartile MAE
+│   ├── models.py            # baseline / statistical / ML / ensemble models
+│   ├── split.py             # rolling-origin fold generator
+│   ├── validate.py          # cross-validation benchmark
+│   ├── predict.py           # predictions.csv generator
+│   ├── policy.py            # prediction intervals and capacity policy
+│   ├── generate_figures.py  # report figures
+│   └── generate_report.py   # canonical final_report.md renderer
+├── tests/                   # leakage, schema, edge-case, ladder, smoke tests
+├── evaluate_holdout.py      # one-pass holdout scoring script
+├── verify_data.py           # minimal data integrity check
+├── reports/                 # generated artifacts (see section 4)
+├── pyproject.toml
+└── requirements.txt
+```

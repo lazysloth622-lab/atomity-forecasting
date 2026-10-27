@@ -1,2 +1,2 @@
-n_training_steps,active_vm_count_constant,active_vm_count_last,cpu_mean,cpu_std,cpu_min,cpu_max,cpu_median,lag1_autocorr,lag24_autocorr,white_noise_band_ci95
-110,True,10000,9.414089019539007,0.19356833547362817,9.111633601754887,9.912175173984913,9.378120946203444,0.6620683329704645,-0.019924543593769918,0.18687866749213608
+n_training_steps,active_vm_count_constant,active_vm_count_last,cpu_mean,cpu_std,cpu_min,cpu_max,cpu_median,lag1_autocorr,lag24_autocorr,white_noise_band_ci95,vm_reading_median_cpu,vm_reading_share_lt5_pct,vm_reading_share_gt80_pct,per_vm_persistence_mae,per_vm_persistence_mae_median,aggregate_persistence_mae
+110,True,10000,9.414089,0.193568,9.111634,9.912175,9.378121,0.662068,-0.019925,0.186879,5.119809,48.929,1.272091,1.944398,0.977001,0.121117

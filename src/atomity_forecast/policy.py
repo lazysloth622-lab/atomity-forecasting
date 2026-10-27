@@ -24,7 +24,9 @@ def compute_uncertainty_and_capacity_policy():
     y_pred = preds_df["aggregate_cpu_utilization"].to_numpy()
     timestamps_holdout = holdout_df["timestamp"].to_numpy()
 
-    # Empirical residual standard deviation on training development window (AR(1) residuals)
+    # Empirical one-step residual standard deviation on the development window.
+    # Assumption (stated): the band is held at constant width because only 110
+    # observations are available; a horizon-widening band is future work.
     train_residuals = y_train[1:] - y_train[:-1]
     residual_std = float(np.std(train_residuals, ddof=1))
 
@@ -33,17 +35,26 @@ def compute_uncertainty_and_capacity_policy():
     lower_bound = np.clip(y_pred - half_width, 0.0, 100.0)
     upper_bound = np.clip(y_pred + half_width, 0.0, 100.0)
 
-    # Capacity buffer policy: Target maximum utilization of 80% with safety margin
-    # Required capacity = (Predicted CPU + 1.96*sigma) / 0.80
+    # Rightsizing policy: the smallest fleet-capacity fraction (relative to the
+    # current fleet) that keeps expected peak utilization at or below 80%:
+    #   capacity_fraction = max_t(upper_band(t)) / 0.80
+    # A value < 1 means the current fleet is over-provisioned on aggregate.
+    # Caveat: this uses the fleet MEAN only; hot individual VMs (>80% busy,
+    # concentrated in the Interactive segment) still need reserved headroom.
     target_util_cap = 80.0
-    recommended_headroom_multiplier = float(np.round(np.max(upper_bound) / target_util_cap, 4))
+    capacity_fraction_of_current_fleet = float(
+        np.round(np.max(upper_bound) / target_util_cap, 4)
+    )
     sla_violations_count = int(np.sum(y_holdout > upper_bound))
 
     policy_stats = {
         "residual_std": residual_std,
         "interval_95_half_width": float(half_width),
         "target_util_threshold": target_util_cap,
-        "capacity_headroom_multiplier": recommended_headroom_multiplier,
+        # Key retained for artifact compatibility; value is a capacity FRACTION
+        # of the current fleet (<1 => rightsizing down is safe on aggregate).
+        "capacity_headroom_multiplier": capacity_fraction_of_current_fleet,
+        "capacity_fraction_of_current_fleet": capacity_fraction_of_current_fleet,
         "holdout_sla_violations": sla_violations_count,
         "holdout_coverage_percentage": float(np.mean((y_holdout >= lower_bound) & (y_holdout <= upper_bound)) * 100.0),
     }

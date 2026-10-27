@@ -10,10 +10,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from src.atomity_forecast.data import load_raw_data, build_targets, get_train_holdout_split
-from src.atomity_forecast.models import DirectRidgeModel
+from atomity_forecast.config import PATHS
+from atomity_forecast.data import load_raw_data, build_targets, get_train_holdout_split
+from atomity_forecast.models import DirectRidgeModel
 
-FIG_DIR = Path("reports") / "figures"
+FIG_DIR = PATHS.figures_dir
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Clean, professional plot styling
@@ -32,7 +33,7 @@ plt.rcParams.update({
 
 def generate_all_figures():
     print("[1/5] Ingesting and aggregating trace...")
-    df_readings, _ = load_raw_data("challenge_data")
+    df_readings, _ = load_raw_data(PATHS.data_dir)
     targets_df = build_targets(df_readings)
     train_df, holdout_df = get_train_holdout_split(targets_df, holdout_len=24)
 

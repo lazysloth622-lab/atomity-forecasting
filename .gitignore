@@ -1,5 +1,9 @@
 venv/
+.venv/
+challenge_data
 challenge_data/
 *.pyc
 __pycache__/
 .ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/

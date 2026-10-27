@@ -7,7 +7,7 @@ name = "atomity-forecast"
 version = "0.1.0"
 description = "Cloud workload forecasting on Azure Public Dataset V2"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26.0",
     "pandas>=2.2.0",
@@ -15,13 +15,16 @@ dependencies = [
     "scikit-learn>=1.4.0",
     "lightgbm>=4.3.0",
     "statsmodels>=0.14.0",
-    "matplotlib>=3.8.0"
+    "matplotlib>=3.8.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0"
+    "pytest>=8.0.0",
 ]
+
+[project.scripts]
+atomity-predict = "atomity_forecast.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

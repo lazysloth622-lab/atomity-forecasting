@@ -1,34 +1,43 @@
 """
-Rolling-origin cross-validation benchmark runner for Atomity Cloud Workload Forecasting.
-Strictly operates within the development/training window (steps 0 to 109).
+Rolling-origin cross-validation benchmark runner for Atomity Cloud Forecasting.
+Strictly operates within the development/training window (first 110 points).
 """
+from __future__ import annotations
+
 import json
-import numpy as np
+
 import pandas as pd
 
 from atomity_forecast.config import CONFIG, PATHS
-from atomity_forecast.data import build_targets, get_train_holdout_split, load_raw_data
+from atomity_forecast.data import (
+    build_targets,
+    get_train_holdout_split,
+    load_raw_data,
+)
 from atomity_forecast.split import generate_rolling_origin_folds
 from atomity_forecast.metrics import evaluate_forecast
 from atomity_forecast.models import (
-    TrainMeanBaseline,
-    LastValueBaseline,
     AR1Model,
-    HoltDampedModel,
-    DirectRidgeModel,
     DirectLightGBMModel,
+    DirectRidgeModel,
     EnsembleModel,
+    HoltDampedModel,
+    LastValueBaseline,
+    TrainMeanBaseline,
 )
 
 
-def run_benchmark():
+def run_benchmark() -> None:
     df_readings, _ = load_raw_data(PATHS.data_dir)
     targets_df = build_targets(df_readings)
-    train_df, _ = get_train_holdout_split(targets_df, holdout_len=CONFIG.holdout_steps)
-    y_train = train_df["aggregate_cpu_utilization"].to_numpy()
+    train_df, _ = get_train_holdout_split(
+        targets_df, holdout_len=CONFIG.holdout_steps
+    )
+    y_cpu = train_df["aggregate_cpu_utilization"].to_numpy()
+    y_count = train_df["active_vm_count"].to_numpy()
 
     folds = generate_rolling_origin_folds(
-        n_train_points=len(y_train),
+        n_train_points=len(y_cpu),
         horizon=CONFIG.horizon_steps,
         min_train_len=CONFIG.min_origin,
         step_size=CONFIG.origin_step,
@@ -47,9 +56,17 @@ def run_benchmark():
     }
 
     fold_results = []
+    count_persistence_maes = []
     for fold in folds:
-        y_tr = y_train[fold.train_indices]
-        y_val = y_train[fold.val_indices]
+        y_tr = y_cpu[fold.train_indices]
+        y_val = y_cpu[fold.val_indices]
+
+        # active_vm_count uses persistence (last observed value); benchmark it
+        # explicitly so the trivial target is not silently ignored.
+        count_pred = y_count[fold.train_indices[-1]]
+        count_persistence_maes.append(
+            float(abs(count_pred - y_count[fold.val_indices]).mean())
+        )
 
         for model_name, factory in models_factory.items():
             model = factory()
@@ -65,12 +82,12 @@ def run_benchmark():
             fold_results.append(metrics)
 
     results_df = pd.DataFrame(fold_results)
-    
-    # Save per-fold results
-    PATHS.tables_dir.mkdir(parents=True, exist_ok=True)
-    results_df.to_csv(PATHS.tables_dir / "cv_fold_metrics.csv", index=False)
 
-    # Compute summary
+    PATHS.tables_dir.mkdir(parents=True, exist_ok=True)
+    results_df.round(6).to_csv(
+        PATHS.tables_dir / "cv_fold_metrics.csv", index=False
+    )
+
     summary = (
         results_df.groupby("model")[["MAE", "RMSE", "WAPE", "Peak_MAE"]]
         .agg(["mean", "std"])
@@ -80,17 +97,20 @@ def run_benchmark():
         f"{col[0]}_{col[1]}" if col[1] else col[0] for col in summary.columns
     ]
     summary = summary.sort_values("MAE_mean").reset_index(drop=True)
-    summary.to_csv(PATHS.tables_dir / "cv_summary.csv", index=False)
+    summary.round(6).to_csv(PATHS.tables_dir / "cv_summary.csv", index=False)
 
     best_model_name = summary.iloc[0]["model"]
     best_mae = float(summary.iloc[0]["MAE_mean"])
     best_peak_mae = float(summary.iloc[0]["Peak_MAE_mean"])
+    persistence_mae = float(
+        results_df.loc[results_df["model"] == "LastValue", "MAE"].mean()
+    )
 
     print("=== CROSS-VALIDATION SUMMARY (TRAINING WINDOW) ===")
     print(summary[["model", "MAE_mean", "MAE_std", "Peak_MAE_mean"]])
     print(f"\nWinning Model by Pre-Registered Rule: {best_model_name}")
+    print(f"active_vm_count persistence CV MAE: {sum(count_persistence_maes)/len(count_persistence_maes):.4f} VMs")
 
-    # Persist to numbers.json
     numbers = {}
     if PATHS.numbers_json.exists():
         with open(PATHS.numbers_json, "r") as f:
@@ -99,6 +119,13 @@ def run_benchmark():
     numbers["cv_winning_model"] = best_model_name
     numbers["cv_best_mae"] = best_mae
     numbers["cv_best_peak_mae"] = best_peak_mae
+    numbers["cv_persistence_mae"] = persistence_mae
+    numbers["count_persistence_cv_mae"] = float(
+        sum(count_persistence_maes) / len(count_persistence_maes)
+    )
+    numbers["cv_relative_improvement_vs_persistence_pct"] = float(
+        (1.0 - best_mae / persistence_mae) * 100.0
+    )
     with open(PATHS.numbers_json, "w") as f:
         json.dump(numbers, f, indent=2)
 

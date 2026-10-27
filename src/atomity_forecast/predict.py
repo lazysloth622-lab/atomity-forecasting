@@ -1,32 +1,51 @@
 """
 Holdout prediction generator for Atomity Cloud Workload Forecasting.
 Generates predictions.csv using the frozen winning Ensemble model.
+
+Leakage protocol: only the first (N - holdout) target observations are used
+for fitting. Holdout values are touched solely to read their timestamps.
 """
-import pandas as pd
+from pathlib import Path
+
 import numpy as np
+import pandas as pd
 
 from atomity_forecast.config import CONFIG, PATHS
-from atomity_forecast.data import load_raw_data, build_targets, get_train_holdout_split
+from atomity_forecast.data import (
+    build_targets,
+    get_train_holdout_split,
+    load_raw_data,
+)
 from atomity_forecast.models import (
-    LastValueBaseline,
     AR1Model,
     DirectRidgeModel,
     EnsembleModel,
+    LastValueBaseline,
 )
 
 
-def generate_predictions() -> pd.DataFrame:
-    df_readings, _ = load_raw_data(PATHS.data_dir)
+def generate_predictions(
+    data_dir: str | Path | None = None,
+    output_path: str | Path | None = None,
+) -> pd.DataFrame:
+    data_dir = Path(data_dir) if data_dir is not None else PATHS.data_dir
+    output_path = Path(output_path) if output_path is not None else PATHS.predictions_csv
+
+    df_readings, _ = load_raw_data(data_dir)
     targets_df = build_targets(df_readings)
-    train_df, holdout_df = get_train_holdout_split(targets_df, holdout_len=CONFIG.holdout_steps)
+    train_df, holdout_df = get_train_holdout_split(
+        targets_df, holdout_len=CONFIG.holdout_steps
+    )
 
     y_train = train_df["aggregate_cpu_utilization"].to_numpy()
     horizon = len(holdout_df)
 
-    # Dynamic active_vm_count (prevents smoke test failures on non-10k VM sets)
+    # The active VM count is a constant/persistence target in this release.
+    # Taking the last observed value keeps the pipeline smoke-safe on fleets
+    # of any size instead of hard-coding 10,000.
     inferred_active_vms = int(round(train_df["active_vm_count"].iloc[-1]))
 
-    # Instantiate and fit frozen winning Ensemble model
+    # Frozen winning Ensemble: LastValue + AR(1) + direct multi-step Ridge.
     ensemble = EnsembleModel(
         [
             LastValueBaseline(),
@@ -45,9 +64,9 @@ def generate_predictions() -> pd.DataFrame:
         }
     )
 
-    # Save artifact strictly matching task specifications
-    predictions_df.to_csv(PATHS.predictions_csv, index=False)
-    print(f"Saved {len(predictions_df)} holdout predictions to {PATHS.predictions_csv}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    predictions_df.to_csv(output_path, index=False)
+    print(f"Saved {len(predictions_df)} holdout predictions to {output_path}")
     return predictions_df
 
 
